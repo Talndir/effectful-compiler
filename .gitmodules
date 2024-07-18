@@ -1,0 +1,3 @@
+[submodule "effective"]
+	path = effective
+	url = git@github.com:zenzike/effective.git
