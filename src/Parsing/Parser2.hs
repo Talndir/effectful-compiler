@@ -181,4 +181,4 @@ parse :: String -> Prog PSig a -> Maybe (String, a)
 parse s = handle (satisfyState `pipe` state s |> labelIgnore |> cutItem)
 
 parseT :: String -> Prog PSig a -> (String, Maybe (String, a))
-parseT s = handle ((satisfyState `pipe` state s) |> (mtH `pipe` (cutItem |> writer)))
+parseT s = handle ((satisfyState ||> state s) |> (mtH ||> (cutItem |> writer)))
