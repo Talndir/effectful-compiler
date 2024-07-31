@@ -5,7 +5,7 @@ import Typing.Typer1
 import Language.Lambda1
 
 expr :: String
-expr = "x y z" --"\\ x . \\ z . (\\ f . f x) z w"
+expr = "\\ x . \\ z . (\\ f . f x) z w"
 
 term1 :: Term String
 term1 = let Just (_, k) = parse expr term in k

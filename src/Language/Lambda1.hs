@@ -2,6 +2,7 @@
 module Language.Lambda1 where
 
 import Prelude hiding (lookup)
+import Control.Monad
 
 import Control.Effect
 import Control.Effect.State
@@ -38,15 +39,23 @@ data Ty a
     | TArr (Ty a) (Ty a)
     deriving (Eq, Foldable, Functor, Traversable)
 
+instance Applicative Ty where
+    pure = TVar
+    (<*>) = ap
+
+instance Monad Ty where
+    TVar x >>= f = f x
+    TArr t1 t2 >>= f = TArr (t1 >>= f) (t2 >>= f)
+
 
 instance Show a => Show (Ty a) where
     showsPrec p t = case t of
         TVar x -> shows x
         TArr t1 t2 ->
             showParen (p > arrPrec)
-            ( showsPrec arrPrec t1
+            ( showsPrec (arrPrec + 1) t1
             . showString " -> "
-            . showsPrec (arrPrec + 1) t2)
+            . showsPrec arrPrec t2)
         where
             arrPrec = 10
 
