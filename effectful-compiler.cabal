@@ -62,19 +62,27 @@ executable effectful-compiler
 
     -- Modules included in this executable, other than Main.
     other-modules:
+        Stuff
         CutItem
 
         Effect.Modify
         Effect.Map
         Effect.Fresh
         Effect.Local
+        Effect.Unify
+        Effect.Lookup
+        Effect.Label
 
         Language.Lambda1
+        Language.Lambda2
 
         Parsing.Parser1
         Parsing.Parser2
+        Parsing.Parser3
 
         Typing.Typer1
+        Typing.Typer2
+        Typing.Typer3
 
     -- LANGUAGE extensions used by modules in this package.
     -- other-extensions:

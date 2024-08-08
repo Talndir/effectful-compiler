@@ -10,7 +10,6 @@ import qualified Data.Map as M
 
 import Control.Effect
 import Control.Family.Algebraic
-import Control.Family.Scoped
 
 import Effect.Modify
 
@@ -72,7 +71,7 @@ mapState :: forall k v . Ord k => Handler '[Map k v] '[Put (M.Map k v), Get (M.M
 mapState = interpretM mapAlg
 
 mapModifyState :: forall k v . Ord k => Handler '[Map k v, Modify v] '[Put (M.Map k v), Get (M.Map k v)] '[] '[]
-mapModifyState = interpretM (\oalg -> (mapAlg oalg) # (modifyAlg M.map oalg))
+mapModifyState = interpretM (\oalg -> (mapAlg oalg) # (modifyAlg @_ @(M.Map k v) M.map oalg))
 
 mapH :: forall k v . Ord k => Handler '[Map k v] '[] '[S.StateT (M.Map k v)] '[(,) (M.Map k v)]
 mapH = mapState ||> state M.empty

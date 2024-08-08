@@ -1,20 +1,21 @@
 module Main where
 
-import Parsing.Parser2
-import Typing.Typer1
-import Language.Lambda1
+import Parsing.Parser3
+import Typing.Typer3
+import Language.Lambda2
 
 expr :: String
-expr = "\\ x . \\ z . (\\ f . f x) z w"
+expr = "\\ f . let w = f in \\ x . w x"
 
-term1 :: Term String
-term1 = let Just (_, k) = parse expr term in k
+term1 :: Term VAAL String
+term1 = let Just (_, k) = parse expr termP in k
 
-term2 :: Term (Int, Ty Int)
-term2 = rename term1
+term2 :: (Int, Term VAAL Int)
+term2 = uniqueVAAL term1
 
-term3 :: Term (Int, Ty Int)
-term3 = typeIt term2
+--term3 :: Term VAAL (Int, Ty Int)
+term3 :: Either String (String, Ty Int, [(Int, Ty Int)], Int)
+term3 = uncurry typeIt' term2
 
 main :: IO ()
 main = putStrLn "Hello, Haskell!"

@@ -1,9 +1,10 @@
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE GADTs #-}
-module Parsing.Parser2 where
+module Parsing.Parser3 where
 
+import Prelude hiding (abs)
 import Control.Applicative
-import Control.Monad (void)
+import Control.Monad
 import Data.Char (isAlphaNum)
 
 import Control.Effect
@@ -15,9 +16,27 @@ import Control.Effect.Writer
 import Control.Family.Algebraic
 import Control.Family.Scoped
 
-import Language.Lambda1
+import Language.Lambda2
 import CutItem
-import Effect.Label
+
+type Label t = Scp (Label' t)
+data Label' t a where
+    Label :: t -> a -> Label' t a
+    deriving Functor
+
+label :: Member (Label t) sig => t -> Prog sig a -> Prog sig a
+label t p = call (Scp (Label t (fmap return p)))
+
+labelAlgIgnore
+    :: forall m oeffs t . Monad m
+    => (forall x . Effs oeffs m x -> m x)
+    -> (forall x . Effs '[Label t] m x -> m x)
+labelAlgIgnore _ op
+    | Just (Scp (Label _ p)) <- prj @(Label t) op = p
+
+labelIgnore :: Handler '[Label t] '[] '[] '[]
+labelIgnore = interpretM labelAlgIgnore
+
 
 type Satisfy c = Alg (Satisfy' c)
 data Satisfy' c a where
@@ -62,33 +81,58 @@ type PSig = [Satisfy Char, Label Tag, Empty, Choose, Commit, CutCall]
 trace :: Member (Tell Trace) sig => String -> Prog sig ()
 trace = tell @Trace
 
+keywords :: [String]
+keywords = ["let", "in"]
+
+notKeyword :: Members PSig sig => String -> Prog sig ()
+notKeyword x = guard (not (x `elem` keywords))
+
 whitespace :: Members PSig sig => Prog sig ()
 whitespace = void $ many (satisfy (==' '))
 
 symbol :: Members PSig sig => Char -> Prog sig Char
 symbol c = satisfy (==c) <* whitespace
 
+string :: Members PSig sig => String -> Prog sig String
+string s = mapM (\c -> satisfy (==c)) s <* whitespace
+
 ident :: Members PSig sig => Prog sig String
-ident = some (satisfy isAlphaNum) <* whitespace
+ident = do
+    x <- some (satisfy isAlphaNum)
+    whitespace
+    notKeyword x
+    return x
 
 parens :: Members PSig sig => Prog sig a -> Prog sig a
 parens p = symbol '(' *> p <* symbol ')'
 
-term, term', lam, var :: Members PSig sig => Prog sig (Term String)
-var = Var <$> ident
-lam = do
+
+halfP, fullP, termP, absP, varP, letP :: Members PSig sig => Prog sig (Term VAAL String)
+varP = var <$> ident
+absP = do
     symbol '\\'
-    -- cut
+    commit
     x <- ident
     symbol '.'
-    t <- term
-    return (Lam x t)
-term' = parens term <|> lam <|> var
-term = term' <* commit >>= termC
+    t <- termP
+    return (abs x t)
+letP = do
+    string "let"
+    commit
+    x <- ident
+    symbol '='
+    m <- termP
+    string "in"
+    n <- termP
+    return (lett x m n)
+halfP = parens fullP <|> varP
+fullP = parens termP <|> absP <|> letP <|> varP
+termP = (halfP <* commit >>= termC) <|> fullP
 
-termC :: Members PSig sig => Term String -> Prog sig (Term String)
-termC t1 = cutCall (    (do t2 <- term'; commit; termC (App t1 t2))
+termC :: Members PSig sig => Term VAAL String -> Prog sig (Term VAAL String)
+termC t1 = cutCall (    (do t2 <- halfP; commit; termC (app @String t1 t2))
                     <|> (do return t1))
+    
 
 makeTrace
     :: Prog [Label Tag, Empty, Choose, Commit, CutCall] a

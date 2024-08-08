@@ -15,9 +15,9 @@ data Modify' t a where
 modify :: forall t sig a . Member (Modify t) sig => (t -> t) -> Prog sig a -> Prog sig a
 modify f k = call @(Modify t) (Scp (Modify f (fmap return k)))
 
-modifyAlg :: forall t s m . Monad m
+modifyAlg :: forall t s m effs . (Monad m, Members '[Put s, Get s] effs)
     => ((t -> t) -> (s -> s))
-    -> Algebra '[Put s, Get s] m
+    -> Algebra effs m
     -> Algebra '[Modify t] m
 modifyAlg t oalg (Eff (Scp (Modify f k))) =do
     s <- eval oalg $ do
