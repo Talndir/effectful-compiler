@@ -106,20 +106,35 @@ ident = do
 parens :: Members PSig sig => Prog sig a -> Prog sig a
 parens p = symbol '(' *> p <* symbol ')'
 
+boundT, halfT, tyT :: Members PSig sig => Prog sig (Ty String)
+boundT = Bound <$> ident
+halfT = parens tyT <|> boundT
+tyT = do
+    t <- halfT
+    ts <- many (string "->" *> tyT)
+    return (foldr1 Arr (t:ts))
 
-halfP, fullP, termP, absP, varP, letP :: Members PSig sig => Prog sig (Term VAAL String)
-varP = var <$> ident
+type T = (String, Maybe (Ty String))
+
+halfP, fullP, termP, absP, varP, letP :: Members PSig sig => Prog sig (Term (VAAL T))
+typedP :: Members PSig sig => Prog sig T
+typedP = parens p <|> p where
+    p = do
+        x <- ident
+        (string "::" *> tyT >>= \t -> return (x, Just t)) <|> return (x, Nothing)
+        
+varP = var <$> typedP
 absP = do
     symbol '\\'
     commit
-    x <- ident
+    x <- typedP
     symbol '.'
     t <- termP
     return (abs x t)
 letP = do
     string "let"
     commit
-    x <- ident
+    x <- typedP
     symbol '='
     m <- termP
     string "in"
@@ -129,8 +144,8 @@ halfP = parens fullP <|> varP
 fullP = parens termP <|> absP <|> letP <|> varP
 termP = (halfP <* commit >>= termC) <|> fullP
 
-termC :: Members PSig sig => Term VAAL String -> Prog sig (Term VAAL String)
-termC t1 = cutCall (    (do t2 <- halfP; commit; termC (app @String t1 t2))
+termC :: Members PSig sig => Term (VAAL T) -> Prog sig (Term (VAAL T))
+termC t1 = cutCall (    (do t2 <- halfP; commit; termC (app t1 t2))
                     <|> (do return t1))
     
 

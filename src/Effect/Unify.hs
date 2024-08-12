@@ -7,7 +7,7 @@ import Control.Effect.Except
 
 type Unify f t = Alg (Unify' f t)
 data Unify' f t a where
-    Unify :: Eq t => f t -> f t -> ((t -> f t) -> a) -> Unify' f t a
+    Unify :: f t -> f t -> ((t -> f t) -> a) -> Unify' f t a
 
 instance Functor (Unify' f t) where
     fmap f (Unify t1 t2 k) = Unify t1 t2 (f . k)

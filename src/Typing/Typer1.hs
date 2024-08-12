@@ -42,17 +42,17 @@ typer (App m n) = do
     (s1, b) <- typer m
     (s2, a) <- modify @(v -> Ty t) (>=> s1) (typer n)
     t <- TVar <$> fresh
-    s3 <- unify @Ty @t (b >>= s2) (TArr a t)
+    s3 <- unify @Ty (b >>= s2) (TArr a t)
     return (s1 >=> s2 >=> s3, t >>= s3)
 typer (Lam x m) = do
     t1 <- freshVar
     (s, t2) <- modify (aug x t1) (typer m)
     return (s, TArr (t1 >>= s) t2)
 
-uni :: (Show a, Eq a) => Ty a -> Ty a -> Prog '[Throw String] (a -> Ty a)
+uni :: Eq a => Ty a -> Ty a -> Prog '[Throw String] (a -> Ty a)
 uni (TVar x) (TVar y) = return (aug x (TVar y) pure)
 uni (TVar x) t = case x `elem` t of
-    True -> throw $ "Unification failure: could not unify " ++ show (TVar x) ++ " and " ++ show t
+    True -> throw $ "Unification failure"
     False -> return (aug x t pure)
 uni t (TVar x) = uni (TVar x) t
 uni (TArr t1 t2) (TArr w1 w2) = do

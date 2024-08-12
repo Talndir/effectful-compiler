@@ -1,6 +1,6 @@
 {-# LANGUAGE DataKinds #-}
 module Typing.Typer2 where
-
+{-
 import Prelude hiding (lookup)
 import qualified Control.Monad.Trans.State.Strict as S
 import Control.Monad.Trans.Except as E
@@ -78,4 +78,4 @@ typeIt :: Term VAA (Int, Ty Int) -> Term VAA (Int, Ty Int)
 typeIt t = mapVAA (fmap (>>= s)) t where
     h = typerH 10 (+1) uni snd
     Right (_, (_, (s, _))) = handle h . cfold typerAll (return, return 0) $ t
-
+-}

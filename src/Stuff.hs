@@ -18,14 +18,21 @@ newtype Const a x = Const { unConst :: a }
 constMap :: (a -> b) -> Const a t -> Const b t
 constMap f (Const x) = Const (f x)
 
-type CAlgebra effs effs' a
-    =  forall (x :: Type) . Effs effs (Const (Prog effs' a)) (Const (Prog effs' a) x)
-    -> Const (Prog effs' a) x
+type CAlg effs a
+    = forall (x :: Type) . Effs effs (Const a) x -> a
 
-cfold :: CAlgebra effs effs' a -> a -> Prog effs b -> Prog effs' a
-cfold _ x (Return _) = return x
-cfold alg x (Call op hk k) = unConst $ alg
-    ((fmap (Const . cfold alg x . k) . hmap (constMap (cfold alg x) . Const . hk)) op)
+type PAlg effs oeffs a
+    =  forall oeffs' . Members oeffs oeffs'
+    => CAlg effs (Prog oeffs' a)
+
+cfold :: a -> CAlg effs a -> Prog effs b -> a
+cfold gen _   (Return _) = gen
+cfold gen alg (Call op hk k) = alg
+    ((fmap (Const . cfold gen alg . k) . hmap (Const . cfold gen alg . hk)) op)
+
+pfold :: forall effs oeffs a b . Members oeffs oeffs
+    => a -> PAlg effs oeffs a -> Prog effs b -> Prog oeffs a
+pfold gen alg = cfold (return gen) (alg @oeffs)
 
 instance Monoid a => Applicative (Const a) where
     pure = Const . mempty

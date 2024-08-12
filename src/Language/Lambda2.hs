@@ -3,11 +3,12 @@
 {-# LANGUAGE AllowAmbiguousTypes #-}
 {-# LANGUAGE UndecidableInstances #-}
 {-# LANGUAGE UndecidableSuperClasses #-}
+{-# LANGUAGE PatternSynonyms #-}
+{-# LANGUAGE ViewPatterns #-}
 module Language.Lambda2 where
 
 import Prelude hiding (lookup, abs)
 
-import Data.Kind (Type)
 import Control.Monad
 import qualified Control.Monad.Trans.State.Strict as S
 import Data.List (intersperse)
@@ -20,49 +21,40 @@ import Control.Effect.State
 import Stuff
 import Effect.Map
 import Effect.Fresh
+import Effect.Label
 
-data Var a k where
-    Var :: a -> Var a k
+type Var a = Scp (Var' a)
+data Var' a k where
+    Var :: a -> Var' a k
     deriving Functor
 
-var :: forall a sig . Member (Scp (Var a)) sig => a -> Prog sig ()
-var x = call @(Scp (Var a)) (Scp (Var x))
+var :: forall a sig . Member (Var a) sig => a -> Prog sig ()
+var x = call @(Var a) (Scp (Var x))
 
-data Abs a k where
-    Abs :: a -> k -> Abs a k
+type Abs a = Scp (Abs' a)
+data Abs' a k where
+    Abs :: a -> k -> Abs' a k
     deriving Functor
 
-abs :: forall a b sig . Member (Scp (Abs a)) sig => a -> Prog sig b -> Prog sig b
-abs x m = call @(Scp (Abs a)) (Scp (Abs x (fmap return m)))
+abs :: forall a b sig . Member (Abs a) sig => a -> Prog sig b -> Prog sig b
+abs x m = call @(Abs a) (Scp (Abs x (fmap return m)))
 
-data App a k where
-    App :: k -> k -> App a k
+type App = Scp App'
+data App' k where
+    App :: k -> k -> App' k
     deriving Functor
 
-app :: forall a b sig . Member (Scp (App a)) sig => Prog sig b -> Prog sig b -> Prog sig b
-app m n = call @(Scp (App a)) (Scp (App (fmap return m) (fmap return n)))
+app :: forall b sig . Member App sig => Prog sig b -> Prog sig b -> Prog sig b
+app m n = call @App (Scp (App (fmap return m) (fmap return n)))
 
-data Let a k where
-    Let :: a -> k -> k -> Let a k
+type Let a = Scp (Let' a)
+data Let' a k where
+    Let :: a -> k -> k -> Let' a k
     deriving Functor
 
-lett :: forall a b sig . Member (Scp (Let a)) sig => a -> Prog sig b -> Prog sig b -> Prog sig b
-lett x p q = call @(Scp (Let a)) (Scp (Let x (fmap return p) (fmap return q)))
+lett :: forall a b sig . Member (Let a) sig => a -> Prog sig b -> Prog sig b -> Prog sig b
+lett x p q = call @(Let a) (Scp (Let x (fmap return p) (fmap return q)))
 
-data Ann t a k where
-    Ann :: t -> k -> Ann t a k
-    deriving Functor
-
-ann :: forall a b t sig . Member (Scp (Ann t a)) sig => t -> Prog sig b -> Prog sig b
-ann t p = call @(Scp (Ann t a)) (Scp (Ann t (fmap return p)))
-
-
-type family MakeTerm (fs :: [Type -> Signature]) (t :: Type) :: [Effect] where
-    MakeTerm '[] t = '[]
-    MakeTerm (f ': fs) t = Scp (f t) ': MakeTerm fs t
-
-type Term fs t = Prog (MakeTerm fs t) ()
-type Annotated fs t a = Prog (MakeTerm (Ann a ': fs) (t, a)) ()
 
 data FixedType = FInt | FBool
     deriving Eq
@@ -72,75 +64,106 @@ instance Show FixedType where
     show FBool = "Bool"
 
 data Ty' c a
-    = Free a
-    | Bound c
-    | Fixed FixedType
-    | Arr (Ty' c a) (Ty' c a)
-    | Forall c (Ty' c a)
+    = TFree a
+    | TBound c
+    | TFixed FixedType
+    | TArr (Ty' c a) (Ty' c a)
+    | TForall c (Ty' c a)
     deriving (Eq, Functor, Foldable)
 
-type Ty a = Ty' a a
+newtype Ty a = Ty { unTy :: Ty' a a }
+    deriving Eq
+
+instance Show a => Show (Ty a) where
+    show (Ty x) = show x
+
+(#$) :: (a -> Ty a) -> Ty a -> Ty a
+(#$) f (Ty x) = Ty (x >>= unTy . f)
+
+(#>) :: (a -> Ty a) -> (a -> Ty a) -> (a -> Ty a)
+(#>) f g x = g #$ f x
+
+instance Foldable Ty where
+    foldr f a (Ty x) = foldr f a x
+
+pattern Free :: a -> Ty a
+pattern Free x = Ty (TFree x)
+
+pattern Bound :: a -> Ty a
+pattern Bound x = Ty (TBound x)
+
+pattern Fixed :: FixedType -> Ty a
+pattern Fixed t = Ty (TFixed t)
+
+pattern Arr :: Ty a -> Ty a -> Ty a
+pattern Arr x y <- Ty (TArr (Ty -> x) (Ty -> y)) where
+    Arr (Ty x) (Ty y) = Ty (TArr x y)
+
+pattern Forall :: a -> Ty a -> Ty a
+pattern Forall x t <- Ty (TForall x (Ty -> t)) where
+    Forall x (Ty t) = Ty (TForall x t)
 
 instance Applicative (Ty' c) where
-    pure = Free
+    pure = TFree
     (<*>) = ap
 
 instance Monad (Ty' c) where
-    Free x >>= f = f x
-    Bound x >>= _ = Bound x
-    Fixed x >>= _ = Fixed x
-    Arr t1 t2 >>= f = Arr (t1 >>= f) (t2 >>= f)
-    Forall x t >>= f = Forall x (t >>= f)
+    TFree x >>= f = f x
+    TBound x >>= _ = TBound x
+    TFixed x >>= _ = TFixed x
+    TArr t1 t2 >>= f = TArr (t1 >>= f) (t2 >>= f)
+    TForall x t >>= f = TForall x (t >>= f)
 
 instance (Show c, Show a) => Show (Ty' c a) where
     showsPrec p k = case k of
-        Free x -> showString "'" . shows x
-        Bound x -> shows x
-        Fixed x -> shows x
-        Arr t1 t2 ->
+        TFree x -> showString "'" . shows x
+        TBound x -> shows x
+        TFixed x -> shows x
+        TArr t1 t2 ->
             showParen (p > arrPrec)
             ( showsPrec (arrPrec + 1) t1
             . showString " -> "
             . showsPrec arrPrec t2)
-        Forall x t -> showForall [x] t
+        TForall x t -> showForall [x] t
         where
             arrPrec = 10
 
             showForall :: [c] -> Ty' c a -> ShowS
-            showForall xs (Forall x t) = showForall (x:xs) t
+            showForall xs (TForall x t) = showForall (x:xs) t
             showForall xs t = showString "∀ " . f (reverse xs) . showString " . " . shows t
 
             f xs = foldl (.) id . intersperse (showString " ") . map shows $ xs
 
 
-type VAA = [Var, App, Abs]
-type VAAL = [Var, App, Abs, Let]
+type VAA a = [Var a, App, Abs a]
+type VAAL a = [Var a, App, Abs a, Let a]
 
-type ShowAlg effs a
-    = forall (x :: Type)
-    .  Effs (MakeTerm effs a) (Const (Int -> ShowS)) (Const (Int -> ShowS) x)
-    -> Const (Int -> ShowS) x
+type Term effs = Prog effs ()
 
-showVar :: Show a => ShowAlg '[Var] a
-showVar (Eff (Scp (Var x))) = Const $ \_ -> shows x
+type ShowAlg effs
+    = CAlg effs (Int -> ShowS)
 
-showApp :: Show a => ShowAlg '[App] a
-showApp (Eff (Scp (App (Const m) (Const n)))) = Const $ \p -> 
+showVar :: Show a => ShowAlg '[Var a]
+showVar (Eff (Scp (Var x))) = \_ -> shows x
+
+showApp :: ShowAlg '[App]
+showApp (Eff (Scp (App (Const m) (Const n)))) = \p -> 
     showParen (p > 10)
     ( m 10
     . showString " "
     . n 11)
 
-showAbs :: Show a => ShowAlg '[Abs] a
-showAbs (Eff (Scp (Abs x (Const m)))) = Const $ \p ->
+showAbs :: Show a => ShowAlg '[Abs a]
+showAbs (Eff (Scp (Abs x (Const m)))) = \p ->
     showParen (p > 5)
     ( showString "λ "
     . shows x
     . showString " . "
     . m 0)
 
-showLet :: Show a => ShowAlg '[Let] a
-showLet (Eff (Scp (Let x (Const m) (Const n)))) = Const $ \p ->
+
+showLet :: Show a => ShowAlg '[Let a]
+showLet (Eff (Scp (Let x (Const m) (Const n)))) = \p ->
     showParen (p > 5)
     ( showString "let "
     . shows x
@@ -149,44 +172,42 @@ showLet (Eff (Scp (Let x (Const m) (Const n)))) = Const $ \p ->
     . showString " in "
     . n 0)
 
-showAnn :: (Show t, Show a) => ShowAlg '[Ann t] a
-showAnn (Eff (Scp (Ann t (Const m)))) = Const $ \p ->
+showAnn :: Show t => ShowAlg '[Label t]
+showAnn (Eff (Scp (Label t (Const m)))) = \p ->
     showParen True
     ( shows t
     . showString " :: "
     . m 0 )
 
-showVAAL :: forall a . Show a => Term VAAL a -> String
-showVAAL p = unConst (fold alg (\_ -> undefined) p) 0 "\n" where
-    alg :: ShowAlg VAAL a
-    alg = showVar @a ## showApp @a ## showAbs @a ## showLet @a
+showVAAL :: forall a . Show a => Term (VAAL a) -> String
+showVAAL p = cfold (\_ _ -> "") alg p 0 "\n" where
+    alg :: ShowAlg (VAAL a)
+    alg = showVar @a ## showApp ## showAbs @a ## showLet @a
 
 
 type MapAlg effs effs' a b
-    = (a -> b) -> CAlgebra (MakeTerm effs a) (MakeTerm effs' b) ()
+    = (a -> b) -> PAlg effs effs' ()
 
-type Mapper effs a b
-    = forall effs' . Members (MakeTerm effs b) (MakeTerm effs' b)
-    => MapAlg effs effs' a b
+mapVar :: MapAlg '[Var a] '[Var b] a b
+mapVar f (Eff (Scp (Var x))) = var (f x)
 
-mapVar :: Mapper '[Var] a b
-mapVar f (Eff (Scp (Var x))) = Const $ var (f x)
+mapApp :: MapAlg '[App] '[App] a b
+mapApp f (Eff (Scp (App (Const m) (Const n)))) = app m n
 
-mapApp :: forall a b . Mapper '[App] a b
-mapApp f (Eff (Scp (App (Const m) (Const n)))) = Const $ app @b m n
+mapAbs :: MapAlg '[Abs a] '[Abs b] a b
+mapAbs f (Eff (Scp (Abs x (Const m)))) = abs (f x) m
 
-mapAbs :: forall a b . Mapper '[Abs] a b
-mapAbs f (Eff (Scp (Abs x (Const m)))) = Const $ abs (f x) m
+mapLet :: MapAlg '[Let a] '[Let b] a b
+mapLet f (Eff (Scp (Let x (Const p) (Const q)))) = lett (f x) p q
 
-mapLet :: forall a b . Mapper '[Let] a b
-mapLet f (Eff (Scp (Let x (Const p) (Const q)))) = Const $ lett (f x) p q
+mapAnn :: MapAlg '[Label t] '[Label u] t u
+mapAnn f (Eff (Scp (Label t (Const m)))) = label (f t) m
 
-mapAnn :: forall a b t . Mapper '[Ann t] a b
-mapAnn f (Eff (Scp (Ann t (Const m)))) = Const $ ann @b t m
+mapVAAL :: forall a b . (a -> b) -> Term (VAAL a) -> Term (VAAL b)
+mapVAAL f = pfold () alg where
+    alg :: PAlg (VAAL a) (VAAL b) ()
+    alg = mapVar f ## mapApp f ## mapAbs f ## mapLet f
 
-mapVAAL :: (a -> b) -> Term VAAL a -> Term VAAL b
-mapVAAL f = cfold (alg f) () where
-    alg g = (mapVar @_ @_ @VAAL g) ## (mapApp @_ @_ @VAAL g) ## (mapAbs @_ @_ @VAAL g) ## (mapLet @_ @_ @VAAL g)
 
 
 type UniqueEffs a b = '[Fresh Int, Map a b]
@@ -194,49 +215,67 @@ type UniqueEffs a b = '[Fresh Int, Map a b]
 uniqueH :: Ord a => Handler (UniqueEffs a b) '[] [S.StateT Int, S.StateT (M.Map a b)] [(,) Int, (,) (M.Map a b)]
 uniqueH = (freshState (+1) ||> state (0 :: Int)) |> mapH
 
-new :: Eq a => Prog (UniqueEffs a Int) Int
+new :: Member (Fresh Int) sig => Prog sig Int
 new = fresh @Int
 
-type UniqueAlg effs effs' a b
-    = CAlgebra (MakeTerm effs a) (UniqueEffs a b) (Term effs' b)
+type T1 = (String, Maybe (Ty Int))
+type T2 = (Int, Ty Int)
 
-type Uniquer effs a b
-    =  forall effs' . Members (MakeTerm effs b) (MakeTerm effs' b)
-    => UniqueAlg effs effs' a b
+type UniqueAlg effs effs'
+    = forall oeffs . Members effs' oeffs
+    => PAlg effs (UniqueEffs String T2) (Term oeffs)
 
-uniqueApp :: Uniquer '[App] String Int
-uniqueApp (Eff (Scp (App (Const m) (Const n)))) = Const $ do
+uniqueVar :: UniqueAlg '[Var T1] '[Var T2]
+uniqueVar (Eff (Scp (Var (x, t)))) = do
+    k <- lookup @_ @T2 x
+    case (k, t) of
+        -- Create new name and new type
+        (Nothing, Nothing) -> do
+            n <- new
+            let s = (n, Free n)
+            insert @_ @T2 x s
+            return (var s)
+        -- Create new name, use given type
+        (Nothing, Just t') -> do
+            n <- new
+            let s = (n, t')
+            insert x s
+            return (var s)
+        -- Use already created name and type
+        (Just s, Nothing) -> return (var s)
+        -- Use already created name but new type
+        -- If the types don't unify, this will be caught at type checking time
+        (Just (n, _), Just t'') -> return (var (n, t''))
+
+
+uniqueApp :: UniqueAlg '[App] '[App]
+uniqueApp (Eff (Scp (App (Const m) (Const n)))) = do
     m' <- m
     n' <- n
-    return (app @Int m' n')
+    return (app m' n')
 
-uniqueAbs :: Uniquer '[Abs] String Int
-uniqueAbs (Eff (Scp (Abs x (Const m)))) = Const $ do
-    w <- new
+uniqueAbs :: UniqueAlg '[Abs T1] '[Abs T2]
+uniqueAbs (Eff (Scp (Abs (x, t) (Const m)))) = do
+    n <- new
+    let w = case t of
+            Nothing -> (n, Free n)
+            Just t' -> (n, t')
     m' <- extend x w m
     return (abs w m')
 
-uniqueVar :: Uniquer '[Var] String Int
-uniqueVar (Eff (Scp (Var x))) = Const $ do
-    t <- lookup @_ @Int x
-    case t of
-        Just t' -> return (var t')
-        Nothing -> do
-            w <- new
-            insert x w
-            return (var w)
-
-uniqueLet :: Uniquer '[Let] String Int
-uniqueLet (Eff (Scp (Let x (Const p) (Const q)))) = Const $ do
+uniqueLet :: UniqueAlg '[Let T1] '[Let T2]
+uniqueLet (Eff (Scp (Let (x, t) (Const p) (Const q)))) = do
     p' <- p
-    w <- new
+    n <- new
+    let w = case t of
+            Nothing -> (n, Free n)
+            Just t' -> (n, t')
     q' <- extend x w q
     return (lett w p' q')
 
-uniqueVAAL :: Term VAAL String -> (Int, Term VAAL Int)
-uniqueVAAL = snd . handle uniqueH . cfold alg (return ()) where
-    alg = (uniqueVar @VAAL) ## (uniqueApp @VAAL) ## (uniqueAbs @VAAL) ## (uniqueLet @VAAL)
-
-
-
-
+uniqueVAAL :: Term (VAAL String) -> (Int, Term (VAAL Int))
+uniqueVAAL p = fmap (mapVAAL fst) . snd . handle uniqueH $ w where
+    alg :: UniqueAlg (VAAL T1) (VAAL T2)
+    alg = uniqueVar ## uniqueApp ## uniqueAbs ## uniqueLet
+    q = mapVAAL (\x -> (x, Nothing)) $ p
+    w = pfold @_ @(UniqueEffs String T2) (return ()) (alg @(VAAL T2)) q
