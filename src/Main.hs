@@ -5,7 +5,7 @@ import Typing.Typer3
 import Language.Lambda2
 
 expr :: String
-expr = "\\ f :: A -> B . let w :: C = f in \\ x :: A . (w :: B) x"
+expr = "(\\ f . \\ x . f x) g y"
 
 term1 :: Term (VAAL T)
 term1 = let Just (_, k) = parse expr termP in k

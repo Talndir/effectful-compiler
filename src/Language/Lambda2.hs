@@ -28,8 +28,11 @@ data Var' a k where
     Var :: a -> Var' a k
     deriving Functor
 
-var :: forall a sig . Member (Var a) sig => a -> Prog sig ()
+var :: forall a b sig . Member (Var a) sig => a -> Prog sig b
 var x = call @(Var a) (Scp (Var x))
+
+pattern Var' :: forall a sig b . Member (Var a) sig => a -> Prog sig b
+pattern Var' x <- (Call (prj @(Var a) -> Just (Scp (Var x))) _ _)
 
 type Abs a = Scp (Abs' a)
 data Abs' a k where
@@ -39,6 +42,9 @@ data Abs' a k where
 abs :: forall a b sig . Member (Abs a) sig => a -> Prog sig b -> Prog sig b
 abs x m = call @(Abs a) (Scp (Abs x (fmap return m)))
 
+pattern Abs' :: forall a sig b . Member (Abs a) sig => a -> Prog sig b -> Prog sig b
+pattern Abs' x p <- (prj2 @(Abs a) -> Just (Scp (Abs x (join -> p))))
+
 type App = Scp App'
 data App' k where
     App :: k -> k -> App' k
@@ -47,6 +53,9 @@ data App' k where
 app :: forall b sig . Member App sig => Prog sig b -> Prog sig b -> Prog sig b
 app m n = call @App (Scp (App (fmap return m) (fmap return n)))
 
+pattern App' :: forall sig b . Member App sig => Prog sig b -> Prog sig b -> Prog sig b
+pattern App' m n <- (prj2 @App -> Just (Scp (App (join -> m) (join -> n))))
+
 type Let a = Scp (Let' a)
 data Let' a k where
     Let :: a -> k -> k -> Let' a k
@@ -54,6 +63,9 @@ data Let' a k where
 
 lett :: forall a b sig . Member (Let a) sig => a -> Prog sig b -> Prog sig b -> Prog sig b
 lett x p q = call @(Let a) (Scp (Let x (fmap return p) (fmap return q)))
+
+pattern Let' :: forall a sig b . Member (Let a) sig => a -> Prog sig b -> Prog sig b -> Prog sig b
+pattern Let' x m n <- (prj2 @(Let a) -> Just (Scp (Let x (join -> m) (join -> n))))
 
 
 data FixedType = FInt | FBool
@@ -140,6 +152,52 @@ type VAAL a = [Var a, App, Abs a, Let a]
 
 type Term effs = Prog effs ()
 
+
+type Subst a effs
+    =  forall oeffs . Members effs oeffs
+    => a -> Term oeffs -> CAlg effs (Term oeffs)
+
+substVar :: Eq a => Subst a '[Var a]
+substVar v p (Eff (Scp (Var x)))
+    | x == v = p
+    | otherwise = var x
+
+substApp :: Subst a '[App]
+substApp _ _ (Eff (Scp (App (Const m) (Const n)))) = app m n
+
+substAbs :: Subst a '[Abs a]
+substAbs _ _ (Eff (Scp (Abs x (Const m)))) = abs x m
+
+substLet :: Subst a '[Let a]
+substLet _ _ (Eff (Scp (Let x (Const m) (Const n)))) = lett x m n
+
+
+substVAAL :: forall a . Eq a => a -> Term (VAAL a) -> Term (VAAL a) -> Term (VAAL a)
+substVAAL v p = cfold (return ()) alg where
+    alg :: CAlg (VAAL a) (Term (VAAL a))
+    alg = substVar v p ## substApp v p ## substAbs v p ## substLet v p
+
+
+reduce :: forall a . Eq a => Term (VAAL a) -> Maybe (Term (VAAL a))
+reduce op@(Var' (x :: a)) = Nothing
+reduce op@(Abs' (x :: a) m) = Nothing
+reduce op@(App' (Abs' (x :: a) m) n) = Just (substVAAL x n m)
+reduce op@(App' m n) = case reduce m of
+    Just m' -> Just (app m' n)
+    Nothing -> case reduce n of
+        Just n' -> Just (app m n')
+        Nothing -> Nothing
+reduce op@(Let' (x :: a) m n) = Just (substVAAL x m n)
+
+iterM :: (a -> Maybe a) -> a -> [a]
+iterM f x = case f x of
+    Nothing -> [x]
+    Just y -> x : iterM f y
+
+exec :: Eq a => Term (VAAL a) -> [Term (VAAL a)]
+exec = iterM reduce
+
+
 type ShowAlg effs
     = CAlg effs (Int -> ShowS)
 
@@ -160,7 +218,6 @@ showAbs (Eff (Scp (Abs x (Const m)))) = \p ->
     . shows x
     . showString " . "
     . m 0)
-
 
 showLet :: Show a => ShowAlg '[Let a]
 showLet (Eff (Scp (Let x (Const m) (Const n)))) = \p ->

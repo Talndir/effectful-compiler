@@ -67,6 +67,15 @@ instance Monoid a => Monoid (Prog effs a) where
 (###) alg1 alg2 oalg = hunion (alg1 (weakenAlg oalg)) (alg2 (weakenAlg oalg))
 
 
+prj2 :: forall sig sigs a . (Member sig sigs, HFunctor sig)
+    => Prog sigs a -> Maybe (sig (Prog sigs) (Prog sigs a))
+prj2 (Return _) = Nothing
+prj2 (Call op hk k) = do
+    s <- prj @sig op
+    let w = fmap k $ hmap hk s
+    return w
+
+
 throwAlg :: Monad m
     => (forall x. oeff m x -> m x)
     -> (forall x. Effs '[Throw e] (E.ExceptT e m) x -> E.ExceptT e m x)
