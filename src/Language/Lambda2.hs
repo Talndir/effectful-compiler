@@ -56,6 +56,11 @@ app m n = call @App (Scp (App (fmap return m) (fmap return n)))
 pattern App' :: forall sig b . Member App sig => Prog sig b -> Prog sig b -> Prog sig b
 pattern App' m n <- (prj2 @App -> Just (Scp (App (join -> m) (join -> n))))
 
+pattern CApp :: forall sig a b . Member App sig => a -> a -> Effs sig (Const a) b
+pattern CApp m n <- (prj @App -> Just (Scp (App (unConst -> m) (unConst -> n))))
+
+--pattern App' :: forall sig b . Member App sig => Prog sig b -> Prog sig b -> Prog sig b
+
 type Let a = Scp (Let' a)
 data Let' a k where
     Let :: a -> k -> k -> Let' a k
@@ -153,41 +158,70 @@ type VAAL a = [Var a, App, Abs a, Let a]
 type Term effs = Prog effs ()
 
 
-type Subst a effs
+type SubstAlg a effs
     =  forall oeffs . Members effs oeffs
     => a -> Term oeffs -> CAlg effs (Term oeffs)
 
-substVar :: Eq a => Subst a '[Var a]
+type Subst a effs
+    = Eq a => a -> Term effs -> Term effs -> Term effs
+
+substVar :: Eq a => SubstAlg a '[Var a]
 substVar v p (Eff (Scp (Var x)))
     | x == v = p
     | otherwise = var x
 
-substApp :: Subst a '[App]
+substApp :: SubstAlg a '[App]
 substApp _ _ (Eff (Scp (App (Const m) (Const n)))) = app m n
 
-substAbs :: Subst a '[Abs a]
+substAbs :: SubstAlg a '[Abs a]
 substAbs _ _ (Eff (Scp (Abs x (Const m)))) = abs x m
 
-substLet :: Subst a '[Let a]
+substLet :: SubstAlg a '[Let a]
 substLet _ _ (Eff (Scp (Let x (Const m) (Const n)))) = lett x m n
 
 
-substVAAL :: forall a . Eq a => a -> Term (VAAL a) -> Term (VAAL a) -> Term (VAAL a)
+substVAAL :: forall a . Subst a (VAAL a)
 substVAAL v p = cfold (return ()) alg where
     alg :: CAlg (VAAL a) (Term (VAAL a))
     alg = substVar v p ## substApp v p ## substAbs v p ## substLet v p
 
 
-reduce :: forall a . Eq a => Term (VAAL a) -> Maybe (Term (VAAL a))
-reduce op@(Var' (x :: a)) = Nothing
-reduce op@(Abs' (x :: a) m) = Nothing
-reduce op@(App' (Abs' (x :: a) m) n) = Just (substVAAL x n m)
-reduce op@(App' m n) = case reduce m of
+type Reduce a effs
+    =  forall effs' . Members effs effs'
+    => Subst a effs'
+    -> (Term effs' -> Maybe (Term effs'))
+    -> Term effs' -> Maybe (Term effs')
+
+reduceVar :: forall a . Eq a => Reduce a '[Var a]
+reduceVar _ _ (Var' (_ :: a)) = Nothing
+reduceVar _ _ _ = Nothing
+
+reduceAbs :: forall a . Reduce a '[Abs a]
+reduceAbs _ _ (Abs' (_ :: a) _) = Nothing
+reduceAbs _ _ _ = Nothing
+
+reduceApp :: Eq a => Reduce a '[App, Abs a]
+reduceApp f _ (App' (Abs' (x :: a) m) n) = Just (f x n m)
+reduceApp _ g (App' m n) = case g m of
     Just m' -> Just (app m' n)
-    Nothing -> case reduce n of
+    Nothing -> case g n of
         Just n' -> Just (app m n')
         Nothing -> Nothing
-reduce op@(Let' (x :: a) m n) = Just (substVAAL x m n)
+reduceApp _ _ _ = Nothing
+
+reduceLet :: Eq a => Reduce a '[Let a]
+reduceLet f _ (Let' (x :: a) m n) = Just (f x m n)
+reduceLet _ _ _ = Nothing
+
+(>~>) :: (a -> Maybe a) -> (a -> Maybe a) -> a -> Maybe a
+(>~>) f g x = case f x of
+    Nothing -> g x
+    Just y -> Just y
+
+reduceVAAL :: forall a . Eq a => Term (VAAL a) -> Maybe (Term (VAAL a))
+reduceVAAL = reduceVar s r >~> reduceAbs s r >~> reduceApp s r >~> reduceLet s r where
+    s = substVAAL
+    r = reduceVAAL
 
 iterM :: (a -> Maybe a) -> a -> [a]
 iterM f x = case f x of
@@ -195,7 +229,21 @@ iterM f x = case f x of
     Just y -> x : iterM f y
 
 exec :: Eq a => Term (VAAL a) -> [Term (VAAL a)]
-exec = iterM reduce
+exec = iterM reduceVAAL
+
+
+ff :: Injects effs effs' => a -> Effs effs (Const (Prog effs' a)) x -> Prog effs' a
+ff x eff = Call (injs eff) (fmap (const undefined) . unConst) (const (return x))
+
+optId :: forall a effs . (Eq a, Members '[Var a, Abs a, App] effs, Injects effs effs)
+    => CAlg effs (Term effs)
+optId (CApp (Abs' (x :: a) (Var' (y :: a))) n)
+    | x == y = n
+    | otherwise = var y
+optId op = ff () op
+
+opt :: forall a effs . (Eq a, Members '[Var a, Abs a, App] effs, Injects effs effs) => Term effs -> Term effs
+opt op = cfold (return ()) (optId @a) op
 
 
 type ShowAlg effs

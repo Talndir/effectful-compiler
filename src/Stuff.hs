@@ -1,5 +1,6 @@
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE AllowAmbiguousTypes #-}
+{-# LANGUAGE UndecidableInstances #-}
 module Stuff where
 
 import Control.Monad
@@ -74,6 +75,18 @@ prj2 (Call op hk k) = do
     s <- prj @sig op
     let w = fmap k $ hmap hk s
     return w
+
+
+class Extracts m a where
+    ex :: m -> Maybe a
+
+instance Member sig sigs
+    => Extracts (Effs sigs m a) (sig m a) where
+    ex = prj
+
+instance (Member sig sigs, HFunctor sig)
+    => Extracts (Prog sigs a) (sig (Prog sigs) (Prog sigs a)) where
+    ex = prj2
 
 
 throwAlg :: Monad m

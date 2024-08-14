@@ -116,7 +116,7 @@ tyT = do
 
 type T = (String, Maybe (Ty String))
 
-halfP, fullP, termP, absP, varP, letP :: Members PSig sig => Prog sig (Term (VAAL T))
+fullP, termP, absP, varP, letP :: Members PSig sig => Prog sig (Term (VAAL T))
 typedP :: Members PSig sig => Prog sig T
 typedP = parens p <|> p where
     p = do
@@ -140,13 +140,8 @@ letP = do
     string "in"
     n <- termP
     return (lett x m n)
-halfP = parens fullP <|> varP
 fullP = parens termP <|> absP <|> letP <|> varP
-termP = (halfP <* commit >>= termC) <|> fullP
-
-termC :: Members PSig sig => Term (VAAL T) -> Prog sig (Term (VAAL T))
-termC t1 = cutCall (    (do t2 <- halfP; commit; termC (app t1 t2))
-                    <|> (do return t1))
+termP = foldl1 app <$> some fullP
     
 
 makeTrace
