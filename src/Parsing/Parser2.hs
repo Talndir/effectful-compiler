@@ -18,6 +18,7 @@ import Control.Family.Scoped
 import Language.Lambda1
 import CutItem
 import Effect.Label
+import Stuff
 
 type Satisfy c = Alg (Satisfy' c)
 data Satisfy' c a where
@@ -33,15 +34,10 @@ satisfyAlg
     -> (forall x . Effs '[Satisfy c] m x -> m x)
 satisfyAlg oalg op
     | Just (Alg (Satisfy p k)) <- prj @(Satisfy c) op = eval oalg $ do
-        input <- get 
-        case input of
-            [] -> stop
-            (x:xs) -> do
-                case p x of
-                    False -> stop
-                    True -> do
-                        put xs
-                        return (k x)
+        (x:xs) <- get
+        if not (p x) then stop else do
+            put xs
+            return (k x)
 
 satisfyState :: Handler '[Satisfy c] [Put [c], Get [c], Empty] '[] '[]
 satisfyState = interpretM satisfyAlg
@@ -141,8 +137,8 @@ mtH = interpretM f where
     
 
 cutItemAlg :: Monad m
-    => (forall x . oeff m x -> m x)
-    -> (forall x . Effs [Empty, Choose, Commit, CutCall] (CutItemT m) x -> CutItemT m x)
+    => (Algebra oeffs m)
+    -> (Algebra [Empty, Choose, Commit, CutCall] (CutItemT m))
 cutItemAlg _ op
     | Just (Alg Empty)          <- prj op = empty
     | Just (Scp (Choose x y))   <- prj op = x <|> y

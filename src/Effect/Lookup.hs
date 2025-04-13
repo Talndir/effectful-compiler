@@ -95,7 +95,7 @@ contextState = interpretM f where
     f :: Monad m => (forall x. Effs '[Put (v -> f t), Get (v -> f t)] m x -> m x)
         -> forall x. Effs '[Lookup v (f t), Modify (v -> f t)] m x -> m x
     f oalg op
-        | Just (Alg (Lookup v k)) <- prj @(Lookup v (f t))op = eval oalg $ do
+        | Just (Alg (Lookup v k)) <- prj @(Lookup v (f t)) op = eval oalg $ do
             w <- get
             return (k (w v))
         | Just (Scp (Modify g k)) <- prj @(Modify (v -> f t)) op = do
@@ -110,10 +110,11 @@ contextState = interpretM f where
 
 
 contextMap :: forall v t f . (Ord v, Eq t, Foldable f)
-    => Handler [Lookup v (f t), Contains t, Modify (f t)]
+    => Handler [Lookup v (f t), Contains t, Modify (f t), Extend v (f t)]
               '[Put (M.Map v (f t)), Get (M.Map v (f t)), Throw String]
               '[] '[]
-contextMap = interpretM (\oalg
+contextMap = interpretM $ \oalg
     -> lookupMapAlg oalg
     #  containsMapInnerAlg @f @v oalg
-    #  modifyAlg @_ @(M.Map v (f t)) M.map oalg)
+    #  modifyAlg @_ @(M.Map v (f t)) M.map oalg
+    #  extendMapAlg @v @(f t) oalg

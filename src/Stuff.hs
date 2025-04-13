@@ -12,6 +12,10 @@ import Control.Family.Algebraic
 import Control.Effect.Except
 import Data.List.Kind
 import Data.HFunctor
+import Control.Effect.Nondet
+
+instance Member Empty sig => MonadFail (Prog sig) where
+    fail _ = stop
 
 newtype Const a x = Const { unConst :: a }
     deriving (Eq, Show, Ord, Functor)
@@ -96,3 +100,27 @@ throwAlg _ (Eff (Alg (Throw e))) = E.ExceptT (return (Left e))
 
 throwT :: Handler '[Throw e] '[] '[E.ExceptT e] '[Either e]
 throwT = handler E.runExceptT throwAlg
+
+
+squash :: forall fs gs a . (Injects fs (fs :++ gs), Injects gs (fs :++ gs))
+    => Prog fs (Prog gs a) -> Prog (fs :++ gs) a
+squash p = join (weakenProg @fs @(fs :++ gs) (fmap (weakenProg @gs @(fs :++ gs)) p))
+
+
+type ShowAlg effs
+    = CAlg effs (Int -> ShowS)
+
+class ShowA eff where
+    showAlg :: ShowAlg '[eff]
+
+class ShowA' effs where
+    showAlg' :: ShowAlg effs
+
+instance ShowA' '[] where
+    showAlg' = absurdEffs
+
+instance (ShowA eff, ShowA' effs, KnownNat (Length effs)) => ShowA' (eff ': effs) where
+    showAlg' = showAlg @eff ## showAlg' @effs
+
+instance ShowA' effs => Show (Prog effs ()) where
+    show p = cfold (\_ _ -> "") showAlg' p 0 "\n"

@@ -21,3 +21,8 @@ labelAlgIgnore _ op
 
 labelIgnore :: Handler '[Label t] '[] '[] '[]
 labelIgnore = interpretM labelAlgIgnore
+
+mapLabel :: (a -> b) -> Handler '[Label a] '[Label b] '[] '[]
+mapLabel f = interpretM (alg f) where
+    alg :: Monad m => (a -> b) -> Algebra '[Label b] m -> Algebra '[Label a] m
+    alg f oalg (Eff (Scp (Label x p))) = oalg $ inj (Scp (Label (f x) p))

@@ -21,7 +21,7 @@ import Effect.Lookup
 
 
 type TyperEffs v f t
-    = '[Fresh t, Lookup v (f t), Contains t, Modify (f t), Unify f t]
+    = '[Fresh t, Lookup v (f t), Contains t, Modify (f t), Extend v (f t), Unify f t]
 
 type TyperAlg effs v f t
     = PAlg effs (TyperEffs v f t) (t -> f t, f t)
@@ -87,11 +87,11 @@ typerH  :: forall v t f . (Ord v, Eq t, Foldable f)
                    '[S.StateT t, S.StateT (M.Map v (f t)), E.ExceptT String] '[(,) t, (,) (M.Map v (f t)), Either String]
 typerH fresh0 freshInc u m
     =  (freshState freshInc ||> state fresh0)
-    |> ((contextMap |> unifyThrow u) ||> (state m |> throwT))
+    |> ((contextMap |> unifyThrow u) ||> (state M.empty |> throwT))
 
 typeIt' :: Int -> Term (VAAL Int) -> Either String (String, Ty Int, [(Int, Ty Int)], Int)
 typeIt' w p = do
     let h = typerH w (+1) uni (M.fromList (map (\x -> (x, Free x)) [0..w-1]))
     (m, (n, (s, t))) <- handle h . cfold (return (Free, Free 0)) typerVAAL $ p
-    return (showVAAL . mapVAAL (\x -> (x, s x)) $ p, t, M.toList m, n)
+    return (show . mapVAAL (\x -> (x, s x)) $ p, t, M.toList m, n)
 

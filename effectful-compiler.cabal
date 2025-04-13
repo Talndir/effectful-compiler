@@ -64,6 +64,7 @@ executable effectful-compiler
     other-modules:
         Stuff
         CutItem
+        Trace
 
         Effect.Modify
         Effect.Map
@@ -72,6 +73,7 @@ executable effectful-compiler
         Effect.Unify
         Effect.Lookup
         Effect.Label
+        Effect.Stack
 
         Language.Lambda1
         Language.Lambda2
@@ -79,10 +81,12 @@ executable effectful-compiler
         Parsing.Parser1
         Parsing.Parser2
         Parsing.Parser3
+        Parsing.Parser4
 
         Typing.Typer1
         Typing.Typer2
         Typing.Typer3
+        Typing.Typer4
 
     -- LANGUAGE extensions used by modules in this package.
     -- other-extensions:
