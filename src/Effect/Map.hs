@@ -1,7 +1,11 @@
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE AllowAmbiguousTypes #-}
-module Effect.Map where
+module Effect.Map (
+    Map, Map'(..),
+    clear, insert, delete, lookup, transform, extend,
+    mapState, mapModifyState,
+    mapH, mapMH) where
 
 import Prelude hiding (lookup)
 import qualified Control.Monad.Trans.State.Strict as S

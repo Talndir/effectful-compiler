@@ -88,6 +88,10 @@ executable effectful-compiler
         Typing.Typer3
         Typing.Typer4
 
+        Language.Lambda
+        Parsing.Parser
+        Typing.Typer
+
     -- LANGUAGE extensions used by modules in this package.
     -- other-extensions:
 

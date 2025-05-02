@@ -1,11 +1,12 @@
 {-# LANGUAGE DataKinds #-}
 module Main where
 
-import Parsing.Parser4
-import Typing.Typer4
-import Language.Lambda2
+import Parsing.Parser
+import Typing.Typer
+import Language.Lambda
 import Effect.Label
 import Trace
+import Control.Effect
 
 expr :: String
 expr = "(\\ f . \\ x . x x)"
@@ -19,12 +20,15 @@ term2 = uniqueLVAAL (mapLVAAL fst term1)
 pterm2 :: IO ()
 pterm2 = putStr (show . snd $ term2)
 
-tterm :: IO ()
-tterm = let (tr, p) = parseH termP expr in do
+test :: Show a => Prog PSig (Term (Label Pos : VAAL a)) -> String -> IO ()
+test p s = let (tr, r) = parseH p s in do
     putStrLn (showTraces tr)
-    case p of
+    case r of
         Nothing -> return ()
         Just (_, q) -> putStrLn (show q)
+
+tterm :: IO ()
+tterm = test termP expr
 
 term3 :: IO ()
 term3 = case fmap show . uncurry (typer expr) $ term2 of
